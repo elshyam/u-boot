@@ -176,7 +176,7 @@ int g_dnl_bind_fixup(struct usb_device_descriptor *dev, const char *name)
 /* called from spl_mmc to see type of boot mode for storage (RAW or FAT) */
 u32 spl_boot_mode(const u32 boot_device)
 {
-	switch (spl_boot_device()) {
+	switch (boot_device) {
 	/* for MMC return either RAW or FAT mode */
 	case BOOT_DEVICE_MMC1:
 	case BOOT_DEVICE_MMC2:
