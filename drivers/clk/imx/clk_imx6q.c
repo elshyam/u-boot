@@ -26,7 +26,7 @@ static ulong imx6q_clk_get_rate(struct clk *clk)
 
 static ulong imx6q_clk_set_rate(struct clk *clk, ulong rate)
 {
-	debug("%s(#%ld, rate: %lu)\n", __func__, clk->id, rate);
+	debug("%s(#%ld)\n", __func__, clk->id);
 
 	debug("  unhandled\n");
 	return -EINVAL;
@@ -34,10 +34,20 @@ static ulong imx6q_clk_set_rate(struct clk *clk, ulong rate)
 
 static int imx6q_clk_enable(struct clk *clk)
 {
+	struct imx6q_clk_priv *priv = dev_get_priv(clk->dev);
+
 	debug("%s(#%ld)\n", __func__, clk->id);
 
-	debug("  unhandled\n");
-	return -EINVAL;
+	switch (clk->id) {
+	case IMX6QDL_CLK_ENET:
+		setbits_le32(priv->base + 0x6c, GENMASK(11, 10));
+		return 0;
+	case IMX6QDL_CLK_ENET_REF:
+		return enable_fec_anatop_clock(0, ENET_50MHZ);
+	default:
+		printf("  unhandled\n");
+		return -ENODEV;
+	}
 }
 
 static struct clk_ops imx6q_clk_ops = {
