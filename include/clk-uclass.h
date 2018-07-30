@@ -100,4 +100,14 @@ struct clk_ops {
 	int (*disable)(struct clk *clk);
 };
 
+/**
+ * generic_clk_valid() - check if clk port is valid
+ *
+ * @clk:	the clk port to check
+ * @return TRUE if valid, or FALSE
+ */
+static inline bool generic_clk_valid(struct clk *clk)
+{
+	return clk->dev != NULL;
+}
 #endif
