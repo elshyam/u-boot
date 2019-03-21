@@ -86,6 +86,7 @@ struct ipu_ch_param {
 #define IPUV3_CLK_MX6Q		264000000
 #define IPUV3_CLK_MX6DL		198000000
 
+#ifndef CONFIG_CLK
 void clk_enable(struct clk *clk)
 {
 	if (clk) {
@@ -104,6 +105,7 @@ void clk_disable(struct clk *clk)
 		}
 	}
 }
+#endif
 
 int clk_get_usecount(struct clk *clk)
 {
@@ -113,6 +115,7 @@ int clk_get_usecount(struct clk *clk)
 	return clk->usecount;
 }
 
+#ifndef CONFIG_CLK
 u32 clk_get_rate(struct clk *clk)
 {
 	if (!clk)
@@ -120,6 +123,7 @@ u32 clk_get_rate(struct clk *clk)
 
 	return clk->rate;
 }
+#endif
 
 struct clk *clk_get_parent(struct clk *clk)
 {
@@ -129,6 +133,7 @@ struct clk *clk_get_parent(struct clk *clk)
 	return clk->parent;
 }
 
+#ifndef CONFIG_CLK
 int clk_set_rate(struct clk *clk, unsigned long rate)
 {
 	if (!clk)
@@ -139,6 +144,7 @@ int clk_set_rate(struct clk *clk, unsigned long rate)
 
 	return clk->rate;
 }
+#endif
 
 long clk_round_rate(struct clk *clk, unsigned long rate)
 {
@@ -148,6 +154,7 @@ long clk_round_rate(struct clk *clk, unsigned long rate)
 	return clk->round_rate(clk, rate);
 }
 
+#ifndef CONFIG_CLK
 int clk_set_parent(struct clk *clk, struct clk *parent)
 {
 	clk->parent = parent;
@@ -155,6 +162,7 @@ int clk_set_parent(struct clk *clk, struct clk *parent)
 		return clk->set_parent(clk, parent);
 	return 0;
 }
+#endif
 
 static int clk_ipu_enable(struct clk *clk)
 {
