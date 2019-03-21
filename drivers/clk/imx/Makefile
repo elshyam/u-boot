@@ -4,3 +4,4 @@
 
 obj-$(CONFIG_CLK_IMX8) += clk-imx8.o
 obj-$(CONFIG_CLK_IMX6Q) += clk_imx6q.o
+obj-$(CONFIG_CLK_IMX6UL) += clk_imx6ul.o
