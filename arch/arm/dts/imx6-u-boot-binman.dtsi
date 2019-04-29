@@ -1,0 +1,16 @@
+#include <config.h>
+
+/ {
+	binman {
+		filename = "u-boot-imx6-with-spl.bin";
+		pad-byte = <0xff>;
+
+		blob {
+			filename = "SPL";
+		};
+
+		u-boot-img {
+			offset = <CONFIG_SPL_PAD_TO>;
+		};
+	};
+};

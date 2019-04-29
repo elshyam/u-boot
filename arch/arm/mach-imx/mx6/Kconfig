@@ -34,6 +34,7 @@ config MX6QDL
 	bool
 	select HAS_CAAM
 	select MX6_SMP
+	select BINMAN if SPL && OF_CONTROL
 
 config MX6S
 	bool
@@ -57,6 +58,7 @@ config MX6UL
 	select ROM_UNIFIED_SECTIONS
 	select SYSCOUNTER_TIMER
 	select SYS_L2CACHE_OFF
+	select BINMAN if SPL && OF_CONTROL
 
 config MX6UL_LITESOM
 	bool

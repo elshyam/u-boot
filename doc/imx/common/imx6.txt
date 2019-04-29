@@ -88,3 +88,8 @@ Reading bank 4:
 
 Word 0x00000002: 9f027772 00000004
 
+2. Single Boot Image
+---------------------
+Write your single imx6 uboot image as:
+
+$ sudo dd if=u-boot-imx6-with-spl.bin of=/dev/mmcblk0 bs=1k seek=1

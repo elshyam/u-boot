@@ -2,6 +2,7 @@
 /*
  * Copyright (C) 2018 Jagan Teki <jagan@amarulasolutions.com>
  */
+#include "imx6-u-boot-binman.dtsi"
 
 / {
 	soc {

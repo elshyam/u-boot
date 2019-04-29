@@ -851,6 +851,11 @@ ifeq ($(CONFIG_ARCH_SUNXI)$(CONFIG_SPL),yy)
 ALL-y += u-boot-sunxi-with-spl.bin
 endif
 
+# Build a combined spl + u-boot image for imx6
+ifeq ($(filter y, $(CONFIG_MX6QDL) $(CONFIG_MX6UL))$(CONFIG_SPL)$(CONFIG_OF_CONTROL),yyy)
+ALL-$(CONFIG_ARCH_MX6) += u-boot-imx6-with-spl.bin
+endif
+
 # enable combined SPL/u-boot/dtb rules for tegra
 ifeq ($(CONFIG_TEGRA)$(CONFIG_SPL),yy)
 ALL-y += u-boot-tegra.bin u-boot-nodtb-tegra.bin
@@ -1362,6 +1367,11 @@ OBJCOPYFLAGS_u-boot-br.bin := -O binary -j .bootpg -j .resetvec
 u-boot-br.bin: u-boot FORCE
 	$(call if_changed,objcopy)
 endif
+endif
+
+ifeq ($(filter y, $(CONFIG_MX6QDL) $(CONFIG_MX6UL))$(CONFIG_SPL)$(CONFIG_OF_CONTROL),yyy)
+u-boot-imx6-with-spl.bin: SPL u-boot-dtb.img FORCE
+	@$(call if_changed,binman)
 endif
 
 # x86 uses a large ROM. We fill it with 0xff, put the 16-bit stuff (including
