@@ -203,14 +203,6 @@
 #endif
 
 /* SPL */
-#ifdef CONFIG_SPL
-# ifdef CONFIG_ENV_IS_IN_NAND
-#  define CONFIG_SPL_NAND_SUPPORT
-# else
-#  define CONFIG_SPL_MMC_SUPPORT
-# endif
-
-# include "imx6_spl.h"
-#endif
+#include "imx6_spl.h"
 
 #endif /* __IMX6_ENGICAM_CONFIG_H */
