@@ -19,6 +19,10 @@
 #include <asm/arch/imx-regs.h>
 #include <asm/arch/sys_proto.h>
 #include <asm/mach-imx/dma.h>
+#include <asm/arch-mxs/regs-ssp.h>
+#include <dm.h>
+//#include <dm/platform_data/spi_mxs.h>
+#include <errno.h>
 
 #define	MXS_SPI_MAX_TIMEOUT	1000000
 #define	MXS_SPI_PORT_OFFSET	0x2000
@@ -27,88 +31,21 @@
 
 #define MXSSSP_SMALL_TRANSFER	512
 
-struct mxs_spi_slave {
-	struct spi_slave	slave;
-	uint32_t		max_khz;
-	uint32_t		mode;
-	struct mxs_ssp_regs	*regs;
+struct mxs_spi_priv {
+	struct mxs_ssp_regs *regs;
+	u32	max_khz;
+	u32	mode;
+	u32	bus;
+	u32	cs;
 };
 
-static inline struct mxs_spi_slave *to_mxs_slave(struct spi_slave *slave)
-{
-	return container_of(slave, struct mxs_spi_slave, slave);
-}
-
-int spi_cs_is_valid(unsigned int bus, unsigned int cs)
-{
-	/* MXS SPI: 4 ports and 3 chip selects maximum */
-	if (!mxs_ssp_bus_id_valid(bus) || cs > 2)
-		return 0;
-	else
-		return 1;
-}
-
-struct spi_slave *spi_setup_slave(unsigned int bus, unsigned int cs,
-				  unsigned int max_hz, unsigned int mode)
-{
-	struct mxs_spi_slave *mxs_slave;
-
-	if (!spi_cs_is_valid(bus, cs)) {
-		printf("mxs_spi: invalid bus %d / chip select %d\n", bus, cs);
-		return NULL;
-	}
-
-	mxs_slave = spi_alloc_slave(struct mxs_spi_slave, bus, cs);
-	if (!mxs_slave)
-		return NULL;
-
-	if (mxs_dma_init_channel(MXS_DMA_CHANNEL_AHB_APBH_SSP0 + bus))
-		goto err_init;
-
-	mxs_slave->max_khz = max_hz / 1000;
-	mxs_slave->mode = mode;
-	mxs_slave->regs = mxs_ssp_regs_by_bus(bus);
-
-	return &mxs_slave->slave;
-
-err_init:
-	free(mxs_slave);
-	return NULL;
-}
-
-void spi_free_slave(struct spi_slave *slave)
-{
-	struct mxs_spi_slave *mxs_slave = to_mxs_slave(slave);
-	free(mxs_slave);
-}
-
-int spi_claim_bus(struct spi_slave *slave)
-{
-	struct mxs_spi_slave *mxs_slave = to_mxs_slave(slave);
-	struct mxs_ssp_regs *ssp_regs = mxs_slave->regs;
-	uint32_t reg = 0;
-
-	mxs_reset_block(&ssp_regs->hw_ssp_ctrl0_reg);
-
-	writel((slave->cs << MXS_SSP_CHIPSELECT_SHIFT) |
-	       SSP_CTRL0_BUS_WIDTH_ONE_BIT,
-	       &ssp_regs->hw_ssp_ctrl0);
-
-	reg = SSP_CTRL1_SSP_MODE_SPI | SSP_CTRL1_WORD_LENGTH_EIGHT_BITS;
-	reg |= (mxs_slave->mode & SPI_CPOL) ? SSP_CTRL1_POLARITY : 0;
-	reg |= (mxs_slave->mode & SPI_CPHA) ? SSP_CTRL1_PHASE : 0;
-	writel(reg, &ssp_regs->hw_ssp_ctrl1);
-
-	writel(0, &ssp_regs->hw_ssp_cmd0);
-
-	mxs_set_ssp_busclock(slave->bus, mxs_slave->max_khz);
-
-	return 0;
-}
-
-void spi_release_bus(struct spi_slave *slave)
-{
-}
+struct mxs_spi_platdata {
+	struct mxs_ssp_regs *regs;
+	u32	max_khz;
+	u32	mode;
+	u32	bus;
+	u32	cs;
+};
 
 static void mxs_spi_start_xfer(struct mxs_ssp_regs *ssp_regs)
 {
@@ -122,10 +59,10 @@ static void mxs_spi_end_xfer(struct mxs_ssp_regs *ssp_regs)
 	writel(SSP_CTRL0_IGNORE_CRC, &ssp_regs->hw_ssp_ctrl0_set);
 }
 
-static int mxs_spi_xfer_pio(struct mxs_spi_slave *slave,
+static int mxs_spi_xfer_pio(struct mxs_spi_priv *priv,
 			char *data, int length, int write, unsigned long flags)
 {
-	struct mxs_ssp_regs *ssp_regs = slave->regs;
+	struct mxs_ssp_regs *ssp_regs = priv->regs;
 
 	if (flags & SPI_XFER_BEGIN)
 		mxs_spi_start_xfer(ssp_regs);
@@ -181,12 +118,11 @@ static int mxs_spi_xfer_pio(struct mxs_spi_slave *slave,
 	return 0;
 }
 
-static int mxs_spi_xfer_dma(struct mxs_spi_slave *slave,
+static int mxs_spi_xfer_dma(struct mxs_spi_priv *priv,
 			char *data, int length, int write, unsigned long flags)
-{
+{	struct mxs_ssp_regs *ssp_regs = priv->regs;
 	const int xfer_max_sz = 0xff00;
 	const int desc_count = DIV_ROUND_UP(length, xfer_max_sz) + 1;
-	struct mxs_ssp_regs *ssp_regs = slave->regs;
 	struct mxs_dma_desc *dp;
 	uint32_t ctrl0;
 	uint32_t cache_data_count;
@@ -225,7 +161,7 @@ static int mxs_spi_xfer_dma(struct mxs_spi_slave *slave,
 	/* Invalidate the area, so no writeback into the RAM races with DMA */
 	invalidate_dcache_range(dstart, dstart + cache_data_count);
 
-	dmach = MXS_DMA_CHANNEL_AHB_APBH_SSP0 + slave->slave.bus;
+	dmach = MXS_DMA_CHANNEL_AHB_APBH_SSP0 + priv->bus;
 
 	dp = desc;
 	while (length) {
@@ -302,11 +238,12 @@ static int mxs_spi_xfer_dma(struct mxs_spi_slave *slave,
 	return ret;
 }
 
-int spi_xfer(struct spi_slave *slave, unsigned int bitlen,
+int mxs_spi_xfer(struct udevice *dev, unsigned int bitlen,
 		const void *dout, void *din, unsigned long flags)
 {
-	struct mxs_spi_slave *mxs_slave = to_mxs_slave(slave);
-	struct mxs_ssp_regs *ssp_regs = mxs_slave->regs;
+	struct udevice *bus = dev_get_parent(dev);
+	struct mxs_spi_priv *priv = dev_get_priv(bus);
+	struct mxs_ssp_regs *ssp_regs = priv->regs;
 	int len = bitlen / 8;
 	char dummy;
 	int write = 0;
@@ -350,9 +287,146 @@ int spi_xfer(struct spi_slave *slave, unsigned int bitlen,
 
 	if (!dma || (len < MXSSSP_SMALL_TRANSFER)) {
 		writel(SSP_CTRL1_DMA_ENABLE, &ssp_regs->hw_ssp_ctrl1_clr);
-		return mxs_spi_xfer_pio(mxs_slave, data, len, write, flags);
+		return mxs_spi_xfer_pio(priv, data, len, write, flags);
 	} else {
 		writel(SSP_CTRL1_DMA_ENABLE, &ssp_regs->hw_ssp_ctrl1_set);
-		return mxs_spi_xfer_dma(mxs_slave, data, len, write, flags);
+		return mxs_spi_xfer_dma(priv, data, len, write, flags);
 	}
 }
+
+static int mxs_spi_probe(struct udevice *bus)
+{
+	struct mxs_spi_platdata *plat = dev_get_platdata(bus);
+	struct mxs_spi_priv *priv = dev_get_priv(bus);
+	int err;
+
+	priv->max_khz = (plat->max_khz) / 1000;
+	priv->mode = plat->mode;
+	priv->bus = plat->bus;
+
+	err = mxs_dma_init_channel(MXS_DMA_CHANNEL_AHB_APBH_SSP0 + priv->bus);
+	if (err) {
+		debug("%s: DMA init channel error %d\n", __func__, err);
+		return err;
+	}
+
+	return 0;
+}
+
+static int mxs_spi_claim_bus(struct udevice *dev)
+{
+	struct udevice *bus = dev_get_parent(dev);
+	struct mxs_spi_priv *priv = dev_get_priv(bus);
+	struct mxs_ssp_regs *ssp_regs = priv->regs;
+	struct mxs_spi_platdata *plat = dev_get_platdata(bus);
+
+	writel(((plat->cs) << MXS_SSP_CHIPSELECT_SHIFT) |
+		SSP_CTRL0_BUS_WIDTH_ONE_BIT, &ssp_regs->hw_ssp_ctrl0);
+
+	return 0;
+}
+
+static int mxs_spi_release_bus(struct udevice *dev)
+{
+
+	return 0;
+}
+
+static int mxs_spi_set_speed(struct udevice *bus, uint speed)
+{
+	struct mxs_spi_priv *priv = dev_get_priv(bus);
+	struct mxs_spi_platdata *plat = dev_get_platdata(bus);
+
+	if (speed > plat->max_khz)
+		speed = plat->max_khz;
+
+	priv->max_khz = speed;
+	debug("%s speed %u\n", __func__, speed);
+
+	mxs_set_ssp_busclock(plat->bus, priv->max_khz);
+
+	return 0;
+}
+
+static int mxs_spi_set_mode(struct udevice *bus, uint mode)
+{
+	struct mxs_spi_priv *priv = dev_get_priv(bus);
+	struct mxs_ssp_regs *ssp_regs = priv->regs;
+	u32 reg;
+
+	priv->mode = mode;
+	debug("%s mode %u\n", __func__, mode);
+
+	reg = SSP_CTRL1_SSP_MODE_SPI | SSP_CTRL1_WORD_LENGTH_EIGHT_BITS;
+	reg |= (priv->mode & SPI_CPOL) ? SSP_CTRL1_POLARITY : 0;
+	reg |= (priv->mode & SPI_CPHA) ? SSP_CTRL1_PHASE : 0;
+	writel(reg, &ssp_regs->hw_ssp_ctrl1);
+
+	/* go in idle state */
+	writel(0, &ssp_regs->hw_ssp_cmd0);
+
+	return 0;
+
+}
+
+static int mxs_spi_cs_info(struct udevice *bus, struct spi_cs_info *info)
+{
+	struct mxs_spi_priv *priv = dev_get_priv(bus);
+	struct mxs_spi_platdata *plat = dev_get_platdata(bus);
+
+	if (plat->cs >= priv->cs) {
+		printf("%s: no cs %u\n", __func__, plat->cs);
+		return -ENODEV;
+	}
+
+	return 0;
+}
+
+static const struct dm_spi_ops mxs_spi_ops = {
+	.claim_bus	= mxs_spi_claim_bus,
+	.release_bus	= mxs_spi_release_bus,
+	.xfer		= mxs_spi_xfer,
+	.set_speed	= mxs_spi_set_speed,
+	.set_mode	= mxs_spi_set_mode,
+	.cs_info	= mxs_spi_cs_info,
+};
+
+#if CONFIG_IS_ENABLED(OF_CONTROL)
+static int mxs_ofdata_to_platdata(struct udevice *bus)
+{
+	fdt_addr_t addr;
+	struct mxs_spi_platdata *plat = bus->platdata;
+	const void *blob = gd->fdt_blob;
+	int node = dev_of_offset(bus);
+
+	addr = devfdt_get_addr(bus);
+	if(addr == FDT_ADDR_T_NONE){
+		debug("SPI: Can't get base address or size\n");
+		return -ENOMEM;
+	}
+
+	plat->regs = (struct mxs_ssp_regs *)addr;
+	plat->cs = fdtdec_get_int(blob, node, "num-cs", 4);
+
+	return 0;
+
+}
+
+static const struct udevice_id mxs_spi_ids[] = {
+	{ .compatible = " " },
+	{ }
+};
+#endif
+
+U_BOOT_DRIVER(mxs_spi) = {
+	.name	= "mxs_spi",
+	.id	= UCLASS_SPI,
+#if CONFIG_IS_ENABLED(OF_CONTROL)
+	.of_match = mxs_spi_ids,
+	.ofdata_to_platdata = mxs_ofdata_to_platdata,
+	.priv_auto_alloc_size = sizeof(struct mxs_spi_platdata),
+#endif
+	.ops	= &mxs_spi_ops,
+	.priv_auto_alloc_size = sizeof(struct mxs_spi_priv),
+	.probe	= mxs_spi_probe,
+};
